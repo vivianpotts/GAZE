@@ -161,9 +161,6 @@
     <div class="start-card">
       <h1>Press Enter to Start</h1>
       <p>
-        First press of <span class="kbd">Enter</span> opens the 8 slots and starts WebGazer (camera permission).<br/>
-        Type a line (spaces allowed), then press <span class="kbd">Enter</span> to place it.<br/>
-        Use <span class="kbd">Shift</span> + <span class="kbd">Enter</span> for a new line (optional).
       </p>
     </div>
   </div>
