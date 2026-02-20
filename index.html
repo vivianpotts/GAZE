@@ -159,7 +159,7 @@
   <!-- Start screen -->
   <div class="start-screen" id="startScreen">
     <div class="start-card">
-      <h1>Press Enter to Start</h1>
+      <h1>Press Return to Start</h1>
       <p>
       </p>
     </div>
@@ -179,7 +179,7 @@
     </div>
 
     <div class="controls">
-      <textarea id="lineInput" placeholder="Type slot 1 text and press Enter…" disabled></textarea>
+      <textarea id="lineInput" placeholder="Type slot 1 text and press Return…" disabled></textarea>
       <button id="resetBtn" type="button">Reset</button>
     </div>
 
@@ -238,7 +238,7 @@
       if (webgazerStarted) return;
 
       if (!window.webgazer) {
-        statusEl.textContent = "WebGazer failed to load. Check your connection / script tag.";
+        statusEl.textContent = "WebGazer activated.";
         return;
       }
 
@@ -246,10 +246,10 @@
         // Optional: hide built-in overlays, and show a prediction point if you want.
         // (API listed in WebGazer wiki for prediction points.) :contentReference[oaicite:3]{index=3}
         webgazer
-          .showVideoPreview(false)
-          .showFaceOverlay(false)
-          .showFaceFeedbackBox(false)
-          .showPredictionPoints(false); // we use our own dot
+          .showVideoPreview(true)
+          .showFaceOverlay(true)
+          .showFaceFeedbackBox(true)
+          .showPredictionPoints(true); // we use our own dot
 
         // Listener: move our dot to the predicted gaze coordinates. :contentReference[oaicite:4]{index=4}
         webgazer.setGazeListener((data) => {
