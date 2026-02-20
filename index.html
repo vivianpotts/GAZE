@@ -8,8 +8,8 @@
     body {
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       margin: 0;
-      background: #aff0de;
-      color: #272626;
+      background: #2b312f;
+      color: #7dfff6;
       height: 100vh;
       overflow: hidden;
     }
@@ -24,8 +24,8 @@
       text-align: center;
     }
     .start-card {
-      background: rgba(255,255,255,0.75);
-      border: 2px solid rgba(215,219,231,0.9);
+      background: rgba(137, 137, 137, 0.75);
+      border: 2px solid rgba(65, 255, 211, 0.9);
       border-radius: 18px;
       padding: 28px 22px;
       max-width: 720px;
@@ -70,7 +70,7 @@
     }
 
     .slot {
-      background: #fff;
+      background: #989898;
       border: 3px solid #d7dbe7;
       border-radius: 16px;
       padding: 14px;
@@ -136,20 +136,22 @@
 
     .status {
       padding: 0 20px 18px;
-      color: #333;
+      color: #b6b6b6;
     }
 
-    /* ---------- Gaze dot overlay ---------- */
+    /* ---------- VERY VISIBLE Gaze dot overlay ---------- */
     .gaze-dot {
       position: fixed;
       left: -9999px;
       top: -9999px;
-      width: 14px;
-      height: 14px;
+      width: 22px;
+      height: 22px;
       border-radius: 999px;
-      background: rgba(0,0,0,0.75);
+      background: rgba(255,0,0,0.95);
+      border: 3px solid rgba(255,255,255,0.95);
+      box-shadow: 0 0 14px rgba(255,0,0,0.75);
       pointer-events: none;
-      z-index: 99999;
+      z-index: 999999;
       transform: translate(-50%, -50%);
     }
   </style>
@@ -160,8 +162,7 @@
   <div class="start-screen" id="startScreen">
     <div class="start-card">
       <h1>Press Return to Start</h1>
-      <p>
-      </p>
+      <p></p>
     </div>
   </div>
 
@@ -189,8 +190,7 @@
   <div class="gaze-dot" id="gazeDot" aria-hidden="true"></div>
 
   <!-- WebGazer library (served by Brown) -->
-  <!-- Docs show including webgazer.js and calling webgazer.begin(). -->
-  <script src="https://webgazer.cs.brown.edu/webgazer.js" type="text/javascript"></script> <!-- :contentReference[oaicite:2]{index=2} -->
+  <script src="https://webgazer.cs.brown.edu/webgazer.js" type="text/javascript"></script>
 
   <script>
     const startScreen = document.getElementById("startScreen");
@@ -207,9 +207,37 @@
 
     let webgazerStarted = false;
 
+    // --- Tournament state (8 -> 4 -> 2 -> 1) ---
+    let activeIndices = [0,1,2,3,4,5,6,7];
+    let choosing = false;
+    let choiceTimer = null;
+    let gazeCounts = { left: 0, right: 0 };
+    let lastGazeX = null;
+
+    const CHOICE_DURATION_MS = 5000;
+    const MIN_SAMPLES_TO_DECIDE = 10; // if not enough gaze data, default left
+
+    function showDotAt(x, y) {
+      gazeDot.style.left = x + "px";
+      gazeDot.style.top = y + "px";
+    }
+    function hideDot() {
+      gazeDot.style.left = "-9999px";
+      gazeDot.style.top = "-9999px";
+    }
+
     function setActiveSlot(i) {
+      // Keep your original "active slot" highlight during typing only
       slots.forEach((s, idx) => {
-        s.classList.toggle("active", started && idx === i && i < 8);
+        s.classList.toggle("active", started && !choosing && idx === i && i < 8);
+      });
+    }
+
+    function renderVisibility() {
+      // show only activeIndices, hide eliminated slots
+      const activeSet = new Set(activeIndices);
+      slots.forEach((slot, i) => {
+        slot.style.display = activeSet.has(i) ? "flex" : "none";
       });
     }
 
@@ -221,48 +249,145 @@
 
       if (!started) return;
 
-      if (index < 8) {
-        statusEl.textContent = `Slot ${index + 1} of 8`;
-        input.placeholder = `Type slot ${index + 1} text and press Enter…`;
-        input.disabled = false;
+      if (!choosing) {
+        // typing mode
+        if (index < 8) {
+          statusEl.textContent = `Slot ${index + 1} of 8${webgazerStarted ? " (WebGazer running)" : ""}`;
+          input.placeholder = `Type slot ${index + 1} text and press Enter…`;
+          input.disabled = false;
+        } else {
+          statusEl.textContent = "Done! All 8 slots filled. Starting gaze selection…";
+          input.placeholder = "Completed";
+          input.disabled = true;
+        }
+        setActiveSlot(index);
       } else {
-        statusEl.textContent = "Done! All 8 slots filled.";
-        input.placeholder = "Completed";
+        // gaze-choice mode
         input.disabled = true;
+        input.placeholder = "Gaze selection running…";
+        slots.forEach(s => s.classList.remove("active"));
       }
 
-      setActiveSlot(index);
+      renderVisibility();
+    }
+
+    function layoutTwoSides() {
+      // Visible slots: first half = LEFT, second half = RIGHT
+      const half = Math.floor(activeIndices.length / 2);
+      const leftGroup = activeIndices.slice(0, half);
+      const rightGroup = activeIndices.slice(half);
+
+      const leftSet = new Set(leftGroup);
+      const rightSet = new Set(rightGroup);
+
+      slots.forEach((slot, i) => {
+        slot.dataset.side = leftSet.has(i) ? "left" : (rightSet.has(i) ? "right" : "");
+        // visual cue (inline, no CSS changes required)
+        if (leftSet.has(i)) {
+          slot.style.outline = "4px solid rgba(91, 124, 250, 0.20)";
+        } else if (rightSet.has(i)) {
+          slot.style.outline = "4px solid rgba(248, 151, 82, 0.22)";
+        } else {
+          slot.style.outline = "none";
+        }
+      });
+
+      return { leftGroup, rightGroup };
+    }
+
+    function startChoiceRound() {
+      if (!webgazerStarted) return;
+      if (activeIndices.length <= 1) return;
+
+      choosing = true;
+      gazeCounts = { left: 0, right: 0 };
+      lastGazeX = null;
+
+      renderVisibility();
+      const { leftGroup, rightGroup } = layoutTwoSides();
+
+      statusEl.textContent = `Look LEFT or RIGHT to choose… (${activeIndices.length} → ${activeIndices.length/2})`;
+      render();
+
+      if (choiceTimer) clearTimeout(choiceTimer);
+      choiceTimer = setTimeout(() => {
+        finishChoiceRound(leftGroup, rightGroup);
+      }, CHOICE_DURATION_MS);
+    }
+
+    function finishChoiceRound(leftGroup, rightGroup) {
+      choosing = false;
+
+      const total = gazeCounts.left + gazeCounts.right;
+
+      // Decide winner
+      let chosenSide = "left";
+      if (total >= MIN_SAMPLES_TO_DECIDE) {
+        chosenSide = (gazeCounts.right > gazeCounts.left) ? "right" : "left";
+      } else if (lastGazeX != null) {
+        chosenSide = (lastGazeX > window.innerWidth / 2) ? "right" : "left";
+      }
+
+      activeIndices = (chosenSide === "left") ? leftGroup : rightGroup;
+
+      // Clear outlines then re-layout next round
+      slots.forEach(slot => (slot.style.outline = "none"));
+
+      statusEl.textContent = `Chose ${chosenSide.toUpperCase()} (${gazeCounts.left}:${gazeCounts.right}). Remaining: ${activeIndices.length}`;
+      render();
+
+      if (activeIndices.length > 1) {
+        setTimeout(startChoiceRound, 400);
+      } else {
+        const winner = activeIndices[0];
+        statusEl.textContent = `Winner: Slot ${winner + 1} → "${lines[winner] || "—"}"`;
+      }
     }
 
     async function startWebgazer() {
       if (webgazerStarted) return;
 
       if (!window.webgazer) {
-        statusEl.textContent = "WebGazer activated.";
+        statusEl.textContent = "WebGazer not found on window.";
         return;
       }
 
       try {
-        // Optional: hide built-in overlays, and show a prediction point if you want.
-        // (API listed in WebGazer wiki for prediction points.) :contentReference[oaicite:3]{index=3}
+        // Make sure ONLY our dot is shown (hide built-in prediction points)
         webgazer
           .showVideoPreview(true)
           .showFaceOverlay(true)
           .showFaceFeedbackBox(true)
-          .showPredictionPoints(true); // we use our own dot
+          .showPredictionPoints(false);
 
-        // Listener: move our dot to the predicted gaze coordinates. :contentReference[oaicite:4]{index=4}
         webgazer.setGazeListener((data) => {
           if (!data) return;
-          gazeDot.style.left = data.x + "px";
-          gazeDot.style.top = data.y + "px";
+
+          // Move OUR dot (always visible while running)
+          showDotAt(data.x, data.y);
+
+          // Save last gaze X
+          lastGazeX = data.x;
+
+          // During choosing, count left/right based on SCREEN midpoint
+          if (choosing) {
+            if (data.x < window.innerWidth / 2) gazeCounts.left++;
+            else gazeCounts.right++;
+          }
         });
 
-        // Begin: requests camera permission and starts predictions. :contentReference[oaicite:5]{index=5}
         await webgazer.begin();
-
         webgazerStarted = true;
-        statusEl.textContent = `Slot ${index + 1} of 8 (WebGazer running)`;
+
+        // Put dot in center immediately so you can see it before first prediction arrives
+        showDotAt(window.innerWidth / 2, window.innerHeight / 2);
+
+        // If typing is already done, begin tournament immediately
+        if (index >= 8) {
+          startChoiceRound();
+        } else {
+          statusEl.textContent = `Slot ${index + 1} of 8 (WebGazer running)`;
+        }
       } catch (err) {
         console.error(err);
         statusEl.textContent = "Could not start WebGazer (camera permission denied or unavailable).";
@@ -276,8 +401,7 @@
       webgazerStarted = false;
 
       // hide dot
-      gazeDot.style.left = "-9999px";
-      gazeDot.style.top = "-9999px";
+      hideDot();
     }
 
     function start() {
@@ -289,6 +413,9 @@
       app.style.display = "flex";
 
       index = 0;
+      activeIndices = [0,1,2,3,4,5,6,7];
+      choosing = false;
+
       input.disabled = false;
       input.value = "";
       input.focus();
@@ -308,15 +435,32 @@
       input.value = "";
       render();
       if (index < 8) input.focus();
+
+      // Once all 8 are filled, start gaze selection if WebGazer is running
+      if (index >= 8) {
+        input.disabled = true;
+        if (webgazerStarted) {
+          setTimeout(startChoiceRound, 300);
+        } else {
+          statusEl.textContent = "All 8 slots filled. (Waiting for WebGazer to start.)";
+        }
+      }
+
       return true;
     }
 
     function resetAll() {
+      if (choiceTimer) clearTimeout(choiceTimer);
+      choiceTimer = null;
+
       // stop tracking + reset UI
       stopWebgazer();
 
       started = false;
+      choosing = false;
       index = 0;
+      activeIndices = [0,1,2,3,4,5,6,7];
+
       for (let i = 0; i < 8; i++) lines[i] = "";
 
       // show start, hide app
@@ -329,7 +473,13 @@
       slots.forEach(s => {
         s.textContent = "—";
         s.classList.remove("filled", "active");
+        s.style.display = "flex";
+        s.style.outline = "none";
+        s.dataset.side = "";
       });
+
+      // hide dot
+      hideDot();
     }
 
     // First Enter starts the app (only when not started)
