@@ -42,15 +42,6 @@
       line-height: 1.45;
       color: #333;
     }
-    .kbd {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      background: #fff;
-      border: 1px solid #d7dbe7;
-      border-bottom-width: 2px;
-      padding: 1px 6px;
-      border-radius: 6px;
-      font-size: 0.95em;
-    }
 
     /* ---------- App layout ---------- */
     .app {
@@ -62,11 +53,13 @@
     .board {
       flex: 1;
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      grid-template-rows: repeat(2, 1fr);
       gap: 16px;
       padding: 20px;
       box-sizing: border-box;
+
+      /* default updated dynamically by JS */
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(2, 1fr);
     }
 
     .slot {
@@ -195,6 +188,7 @@
   <script>
     const startScreen = document.getElementById("startScreen");
     const app = document.getElementById("app");
+    const board = document.getElementById("board");
     const input = document.getElementById("lineInput");
     const statusEl = document.getElementById("status");
     const resetBtn = document.getElementById("resetBtn");
@@ -233,7 +227,24 @@
       });
     }
 
+    // Dynamically resize the grid so 4 items becomes 2x2 (not 1x4)
+    function updateBoardGrid() {
+      const n = activeIndices.length;
+
+      // default: 8 items = 4x2
+      let cols = 4, rows = 2;
+
+      if (n === 4) { cols = 2; rows = 2; }      // key change
+      else if (n === 2) { cols = 2; rows = 1; } // big left/right
+      else if (n === 1) { cols = 1; rows = 1; } // winner
+
+      board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+      board.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+    }
+
     function renderVisibility() {
+      updateBoardGrid();
+
       // show only activeIndices, hide eliminated slots
       const activeSet = new Set(activeIndices);
       slots.forEach((slot, i) => {
@@ -271,8 +282,10 @@
       renderVisibility();
     }
 
+    // LEFT vs RIGHT grouping.
+    // For n=4 in a 2x2 grid, we force "leftGroup" into left column (cells 1 & 3),
+    // and "rightGroup" into right column (cells 2 & 4) using flex order.
     function layoutTwoSides() {
-      // Visible slots: first half = LEFT, second half = RIGHT
       const half = Math.floor(activeIndices.length / 2);
       const leftGroup = activeIndices.slice(0, half);
       const rightGroup = activeIndices.slice(half);
@@ -280,9 +293,27 @@
       const leftSet = new Set(leftGroup);
       const rightSet = new Set(rightGroup);
 
+      // Clear any previous ordering first
+      slots.forEach(slot => { slot.style.order = ""; });
+
+      if (activeIndices.length === 4) {
+        // Left column: positions 1 & 3; Right column: positions 2 & 4
+        leftGroup.forEach((idx, k) => {
+          slots[idx].style.order = (k === 0) ? 1 : 3;
+        });
+        rightGroup.forEach((idx, k) => {
+          slots[idx].style.order = (k === 0) ? 2 : 4;
+        });
+      } else {
+        // Otherwise keep a stable visible order
+        activeIndices.forEach((idx, k) => {
+          slots[idx].style.order = k + 1;
+        });
+      }
+
+      // visual cue
       slots.forEach((slot, i) => {
         slot.dataset.side = leftSet.has(i) ? "left" : (rightSet.has(i) ? "right" : "");
-        // visual cue (inline, no CSS changes required)
         if (leftSet.has(i)) {
           slot.style.outline = "4px solid rgba(91, 124, 250, 0.20)";
         } else if (rightSet.has(i)) {
@@ -330,8 +361,11 @@
 
       activeIndices = (chosenSide === "left") ? leftGroup : rightGroup;
 
-      // Clear outlines then re-layout next round
-      slots.forEach(slot => (slot.style.outline = "none"));
+      // Clear outlines + order
+      slots.forEach(slot => {
+        slot.style.outline = "none";
+        slot.style.order = "";
+      });
 
       statusEl.textContent = `Chose ${chosenSide.toUpperCase()} (${gazeCounts.left}:${gazeCounts.right}). Remaining: ${activeIndices.length}`;
       render();
@@ -475,6 +509,7 @@
         s.classList.remove("filled", "active");
         s.style.display = "flex";
         s.style.outline = "none";
+        s.style.order = "";
         s.dataset.side = "";
       });
 
